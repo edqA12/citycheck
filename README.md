@@ -121,9 +121,53 @@ python run_server.py
 ### 4. 访问系统
 
 打开浏览器（推荐 Chrome 或 Edge）访问：
-[http://localhost:8088](http://localhost:8088)
+[http://localhost:8080](http://localhost:8080)
 
-## 📁 目录结构概览
+## 🐳 DeepSeek R1 模型部署 (Docker & Ollama)
+
+本系统支持通过 Docker 部署 Ollama 并运行 DeepSeek R1 模型，以便进行本地大模型调用。
+
+### 1. 在 Windows 上安装 Docker Desktop
+
+1.  访问 [Docker Desktop 官网](https://www.docker.com/products/docker-desktop/) 下载 Windows 版本安装包。
+2.  安装过程中确保勾选 **"Use WSL 2 instead of Hyper-V"**（推荐）。
+3.  安装完成后，启动 Docker Desktop。
+
+### 2. 在 Docker 中运行 Ollama
+
+打开 PowerShell 或命令提示符（CMD），运行以下命令启动 Ollama 容器。
+
+**CPU 模式（如果无需 GPU 加速）：**
+
+```bash
+docker run -d -v ollama:/root/.ollama -p 11434:11434 --name ollama ollama/ollama
+```
+
+**GPU 模式（推荐，需要 NVIDIA 显卡）：**
+_确保 Docker Desktop 已启用 WSL 2 后端，即可直接利用 GPU。_
+
+```bash
+docker run -d --gpus=all -v ollama:/root/.ollama -p 11434:11434 --name ollama ollama/ollama
+```
+
+### 3. 部署 DeepSeek R1 模型
+
+进入 Ollama 容器并拉取 DeepSeek R1 模型：
+
+```bash
+# 1. 进入容器交互模式
+docker exec -it ollama bash
+
+# 2. 拉取并运行 DeepSeek R1 模型
+ollama run deepseek-r1
+```
+
+等待模型下载完毕后，即可在命令行中与 DeepSeek R1 进行对话。
+若需退出对话，输入 `/bye`；若需退出容器，输入 `exit`。
+
+API 服务默认运行在 `http://localhost:11434`。
+
+## � 目录结构概览
 
 ```
 SmartWaterPatrolSystem/
@@ -150,6 +194,7 @@ SmartWaterPatrolSystem/
 2.  **浏览器权限**：使用摄像头功能时，请允许浏览器访问摄像头的权限。
 3.  **流媒体延迟**：RTSP/RTMP 流的延迟取决于网络状况和流媒体服务器配置，建议在局域网环境下测试。
 4.  **性能优化**：如果检测帧率较低，可以尝试在后端调整图像处理的分辨率或更换更轻量级的 YOLO 模型版本。
+5.  **Docker 资源**：运行 DeepSeek R1 等大模型需要较多的内存和显存，请确保 Docker Desktop 分配了足够的资源。
 
 ---
 
