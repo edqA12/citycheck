@@ -1,0 +1,449 @@
+<!DOCTYPE html>
+<html lang="zh">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>城市设施巡航预警与预案系统</title>
+    <link rel="icon" type="image/x-icon" href="data:image/x-icon;," />
+    <link href="./css/lib/bootstrap.min.css" rel="stylesheet" />
+    <link href="./css/lib/element-plus.index.css" rel="stylesheet" />
+    <link
+      rel="stylesheet"
+      href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0/css/all.min.css"
+    />
+    <link rel="stylesheet" href="css/styles.css" />
+    <script type="importmap">
+      {
+        "imports": {
+          "vue": "./js/lib/vue.esm-browser.js",
+          "element-plus": "./js/lib/element-plus.index.full.mjs"
+        }
+      }
+    </script>
+  </head>
+  <body>
+    <div id="app">
+      <nav class="navbar navbar-expand-lg navbar-dark bg-dark">
+        <div class="container-fluid">
+          <a class="navbar-brand" href="#">
+            <i class="fas fa-water me-2"></i>
+            城市设施巡航预警与预案系统
+          </a>
+        </div>
+      </nav>
+
+      <div class="container-fluid main-container">
+        <div class="row">
+          <!-- 左侧：控制面板 -->
+          <div class="col-lg-3 mb-4">
+            <div class="card control-panel">
+              <div class="card-body">
+                <h5 class="card-title">
+                  <i class="fas fa-sliders-h me-2"></i>
+                  控制面板
+                </h5>
+
+                <div class="d-flex flex-wrap">
+                  <button class="btn btn-primary" @click="startCamera">
+                    <i class="fas fa-camera btn-icon"></i>
+                    开启摄像头
+                  </button>
+                  <button class="btn btn-secondary" @click="stopCamera">
+                    <i class="fas fa-stop-circle btn-icon"></i>
+                    停止检测
+                  </button>
+                </div>
+
+                <div class="file-upload-container">
+                  <label class="custom-file-upload">
+                    <i class="fas fa-file-video"></i>
+                    <p>上传视频文件</p>
+                    <small>支持MP4、WebM等常见格式</small>
+                    <input
+                      type="file"
+                      class="file-input"
+                      @change="handleFileUpload"
+                      accept="video/*"
+                    />
+                  </label>
+                </div>
+
+                <!-- 流媒体检测 -->
+                <div class="stream-detection-container mt-3 mb-3">
+                  <h6 class="mb-2">
+                    <i class="fas fa-stream me-2"></i>
+                    流媒体检测
+                  </h6>
+                  <div class="mb-2">
+                    <input
+                      type="text"
+                      class="form-control"
+                      v-model="streamUrl"
+                      placeholder="输入 RTMP/RTSP 流地址"
+                    />
+                  </div>
+                  <div class="d-flex gap-2 mb-2">
+                    <button
+                      class="btn btn-info flex-grow-1"
+                      @click="startStreamDetection"
+                      :disabled="isStreamDetecting"
+                    >
+                      <i class="fas fa-play-circle me-1"></i>
+                      连接
+                    </button>
+                    <button
+                      class="btn btn-danger flex-grow-1"
+                      @click="stopStreamDetection"
+                      :disabled="!isStreamDetecting"
+                    >
+                      <i class="fas fa-stop-circle me-1"></i>
+                      断开
+                    </button>
+                  </div>
+                  <small class="text-muted"
+                    >支持 RTMP/RTSP/HTTP 等流媒体协议</small
+                  >
+                </div>
+
+                <div class="text-center">
+                  <div class="status-badge" :class="statusClass">
+                    <i :class="statusIcon" class="me-2"></i>
+                    {{ detectionStatus }}
+                  </div>
+                </div>
+              </div>
+            </div>
+
+            <div class="visualization-container">
+              <h5 class="card-title">
+                <i class="fas fa-chart-pie me-2"></i>
+                检测结果可视化
+              </h5>
+
+              <div v-if="detectionCount > 0">
+                <div class="stats-summary">
+                  <div class="stats-card">
+                    <div class="stats-card-value">{{ detectionCount }}</div>
+                    <div class="stats-card-label">检测总数</div>
+                  </div>
+                  <div class="stats-card">
+                    <div class="stats-card-value">
+                      {{ Object.keys(detectionClasses).length }}
+                    </div>
+                    <div class="stats-card-label">检测类别</div>
+                  </div>
+                  <div class="stats-card">
+                    <div class="stats-card-value">
+                      {{ getMaxDetectionClass().count }}
+                    </div>
+                    <div class="stats-card-label">最多检测</div>
+                  </div>
+                </div>
+
+                <!-- 井盖相关检测 -->
+                <div class="stats-category" v-if="hasCategoryDetections(0, 4)">
+                  <div class="stats-category-title">
+                    <i class="fas fa-cubes me-2"></i>
+                    井盖相关
+                  </div>
+                  <div
+                    class="stats-item"
+                    v-for="(count, className) in getCategoryDetections(0, 4)"
+                    :key="className"
+                  >
+                    <div class="d-flex flex-column flex-grow-1">
+                      <div class="d-flex justify-content-between">
+                        <span class="stats-label">{{ className }}</span>
+                        <span class="stats-value">{{ count }}</span>
+                      </div>
+                      <div class="stats-bar-container">
+                        <div
+                          class="stats-bar"
+                          :style="{ width: getPercentage(count) + '%', backgroundColor: '#e74c3c' }"
+                        ></div>
+                      </div>
+                    </div>
+                  </div>
+                </div>
+
+                <!-- 管道相关检测 -->
+                <div class="stats-category" v-if="hasCategoryDetections(5, 6)">
+                  <div class="stats-category-title">
+                    <i class="fas fa-tint me-2"></i>
+                    管道相关
+                  </div>
+                  <div
+                    class="stats-item"
+                    v-for="(count, className) in getCategoryDetections(5, 6)"
+                    :key="className"
+                  >
+                    <div class="d-flex flex-column flex-grow-1">
+                      <div class="d-flex justify-content-between">
+                        <span class="stats-label">{{ className }}</span>
+                        <span class="stats-value">{{ count }}</span>
+                      </div>
+                      <div class="stats-bar-container">
+                        <div
+                          class="stats-bar"
+                          :style="{ width: getPercentage(count) + '%', backgroundColor: '#3498db' }"
+                        ></div>
+                      </div>
+                    </div>
+                  </div>
+                </div>
+
+                <!-- 工程车辆检测 -->
+                <div class="stats-category" v-if="hasCategoryDetections(7, 16)">
+                  <div class="stats-category-title">
+                    <i class="fas fa-truck me-2"></i>
+                    工程车辆
+                  </div>
+                  <div
+                    class="stats-item"
+                    v-for="(count, className) in getCategoryDetections(7, 16)"
+                    :key="className"
+                  >
+                    <div class="d-flex flex-column flex-grow-1">
+                      <div class="d-flex justify-content-between">
+                        <span class="stats-label">{{ className }}</span>
+                        <span class="stats-value">{{ count }}</span>
+                      </div>
+                      <div class="stats-bar-container">
+                        <div
+                          class="stats-bar"
+                          :style="{ width: getPercentage(count) + '%', backgroundColor: '#2ecc71' }"
+                        ></div>
+                      </div>
+                    </div>
+                  </div>
+                </div>
+
+                <!-- 其他检测 -->
+                <div class="stats-category" v-if="hasOtherDetections()">
+                  <div class="stats-category-title">
+                    <i class="fas fa-question-circle me-2"></i>
+                    其他物体
+                  </div>
+                  <div
+                    class="stats-item"
+                    v-for="(count, className) in getOtherDetections()"
+                    :key="className"
+                  >
+                    <div class="d-flex flex-column flex-grow-1">
+                      <div class="d-flex justify-content-between">
+                        <span class="stats-label">{{ className }}</span>
+                        <span class="stats-value">{{ count }}</span>
+                      </div>
+                      <div class="stats-bar-container">
+                        <div
+                          class="stats-bar"
+                          :style="{ width: getPercentage(count) + '%', backgroundColor: '#f39c12' }"
+                        ></div>
+                      </div>
+                    </div>
+                  </div>
+                </div>
+              </div>
+              <div v-else class="text-center text-muted py-3">
+                <i class="fas fa-chart-bar fs-4 mb-2"></i>
+                <p class="mb-0">暂无检测数据</p>
+                <small class="text-muted">开始检测后将显示统计信息</small>
+              </div>
+            </div>
+          </div>
+
+          <!-- 中间：视频显示 -->
+          <div class="col-lg-6">
+            <div
+              class="alert alert-warning alert-dismissible fade show mb-3"
+              role="alert"
+              v-if="showWarning"
+            >
+              <i class="fas fa-exclamation-triangle me-2"></i>
+              {{ warningMessage }}
+              <button
+                type="button"
+                class="btn-close"
+                @click="dismissWarning"
+              ></button>
+            </div>
+            <div class="card">
+              <div class="card-body p-0">
+                <div
+                  class="video-container"
+                  :style="{ aspectRatio: videoAspectRatio }"
+                >
+                  <div
+                    class="video-placeholder"
+                    :class="{ 'hidden': isVideoActive }"
+                  >
+                    <i class="fas fa-video"></i>
+                    <h4>等待视频输入</h4>
+                    <p>请开启摄像头或上传视频文件</p>
+                  </div>
+                  <video
+                    id="videoElement"
+                    ref="videoElement"
+                    autoplay
+                    playsinline
+                  ></video>
+                  <canvas id="canvasElement" ref="canvasElement"></canvas>
+
+                  <!-- 视频控制面板 -->
+                  <div
+                    class="video-controls"
+                    v-if="isVideoActive && !isCameraMode"
+                  >
+                    <div
+                      class="progress-container"
+                      ref="progressContainer"
+                      @click="seekVideo"
+                    >
+                      <div
+                        class="progress-bar"
+                        :style="{ width: videoProgress + '%' }"
+                      ></div>
+                      <div
+                        class="progress-handle"
+                        :style="{ left: videoProgress + '%' }"
+                      ></div>
+                    </div>
+                    <div class="controls-row">
+                      <div class="d-flex align-items-center">
+                        <button class="control-button" @click="togglePlay">
+                          <i
+                            :class="isPlaying ? 'fas fa-pause' : 'fas fa-play'"
+                          ></i>
+                        </button>
+                        <div class="volume-container">
+                          <button class="control-button" @click="toggleMute">
+                            <i
+                              :class="isMuted ? 'fas fa-volume-mute' : 'fas fa-volume-up'"
+                            ></i>
+                          </button>
+                          <input
+                            type="range"
+                            class="volume-slider"
+                            min="0"
+                            max="1"
+                            step="0.1"
+                            v-model="volume"
+                            @input="updateVolume"
+                          />
+                        </div>
+                        <span class="time-display"
+                          >{{ formatTime(currentTime) }} / {{
+                          formatTime(duration) }}</span
+                        >
+                      </div>
+                      <div>
+                        <button
+                          class="control-button"
+                          @click="toggleFullscreen"
+                        >
+                          <i class="fas fa-expand"></i>
+                        </button>
+                      </div>
+                    </div>
+                  </div>
+                </div>
+              </div>
+            </div>
+          </div>
+
+          <!-- 右侧：图表可视化和AI助手 -->
+          <div class="col-lg-3 d-flex flex-column">
+            <div class="card mb-4 chart-card">
+              <div class="card-body chart-container">
+                <h5 class="card-title">
+                  <i class="fas fa-chart-pie me-2"></i>
+                  检测分布
+                </h5>
+                <canvas id="detectionPieChart" ref="pieChartElement"></canvas>
+              </div>
+            </div>
+            <script>
+              window.difyChatbotConfig = {
+                token: "jbc326lUCAflK9sM",
+                baseUrl: "http://localhost",
+              };
+            </script>
+            <script
+              src="http://localhost/embed.min.js"
+              id="jbc326lUCAflK9sM"
+              defer
+            ></script>
+            <style>
+              #dify-chatbot-bubble-button {
+                background-color: #1c64f2 !important;
+              }
+              #dify-chatbot-bubble-window {
+                width: 24rem !important;
+                height: 40rem !important;
+              }
+            </style>
+            <!-- 隐患信息模块 -->
+            <div class="card mb-4 shadow-sm hazard-card">
+              <div
+                class="card-header d-flex justify-content-between align-items-center"
+              >
+                <h5 class="mb-0">
+                  <i class="fas fa-exclamation-triangle me-2"></i>
+                  隐患信息
+                  <span
+                    v-if="hasHazards"
+                    class="badge rounded-pill"
+                    :class="{'bg-danger': hazardCount > 3, 'bg-warning text-dark': hazardCount <= 3 && hazardCount > 1, 'bg-info': hazardCount === 1}"
+                  >
+                    {{ hazardCount }}
+                  </span>
+                </h5>
+              </div>
+              <div class="card-body hazard-body">
+                <div v-if="hasHazards" class="hazard-list">
+                  <div
+                    v-for="(_, type) in hazards"
+                    :key="type"
+                    class="hazard-item"
+                    :data-hazard-type="type"
+                  >
+                    <div
+                      class="d-flex justify-content-between align-items-center mb-1"
+                    >
+                      <div class="hazard-type">
+                        <i class="fas" :class="getHazardIcon(type)"></i>
+                        {{ type.startsWith('工程车辆-') ?
+                        type.replace('工程车辆-', '') : type }}
+                      </div>
+                      <span
+                        class="badge rounded-pill"
+                        :class="getHazardBadgeClass(type)"
+                      >
+                        检测到
+                      </span>
+                    </div>
+                    <div class="hazard-progress">
+                      <div
+                        class="progress-bar"
+                        :class="getHazardProgressClass(type)"
+                        :style="{width: getHazardPercentage() + '%'}"
+                      ></div>
+                    </div>
+                  </div>
+                </div>
+                <div v-else class="text-center text-muted py-3">
+                  <i class="fas fa-check-circle fs-4 mb-2"></i>
+                  <p class="mb-0">暂未检测到隐患</p>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <script src="./js/lib/chart.min.js"></script>
+    <script src="./js/lib/bootstrap.bundle.min.js"></script>
+    <script type="module" src="js/app.js"></script>
+  </body>
+</html>
