@@ -2,40 +2,62 @@ import http.server
 import socketserver
 import mimetypes
 import os
+import sys
 
-PORT = 8080
+PORT = 8088
 DIRECTORY = "."
 
 class Handler(http.server.SimpleHTTPRequestHandler):
     def __init__(self, *args, **kwargs):
         super().__init__(*args, directory=DIRECTORY, **kwargs)
+        # 确保 extensions_map 中包含正确的 MIME 类型
+        self.extensions_map.update({
+            '.js': 'application/javascript',
+            '.mjs': 'application/javascript',
+            '.css': 'text/css',
+            '.json': 'application/json',
+        })
 
-    def end_headers(self):
-        self.send_my_headers()
-        http.server.SimpleHTTPRequestHandler.end_headers(self)
-
-    def send_my_headers(self):
-        path = self.path
+    def guess_type(self, path):
+        # 强制指定 .js 和 .mjs 的 MIME 类型
         if path.endswith(".js") or path.endswith(".mjs"):
-            self.send_header("Content-Type", "application/javascript")
-        elif path.endswith(".css"):
-            self.send_header("Content-Type", "text/css")
-        elif path.endswith(".json"):
-            self.send_header("Content-Type", "application/json")
+            return "application/javascript"
+        if path.endswith(".css"):
+            return "text/css"
+        if path.endswith(".json"):
+            return "application/json"
+        # 其他文件使用默认的 guess_type
+        return super().guess_type(path)
 
-# 确保 mimetypes 库也知道 .js 是什么
-mimetypes.add_type('application/javascript', '.js')
-mimetypes.add_type('application/javascript', '.mjs')
-mimetypes.add_type('text/css', '.css')
+    # 允许跨域请求（可选，方便调试）
+    def end_headers(self):
+        self.send_header('Access-Control-Allow-Origin', '*')
+        # 禁止缓存，防止浏览器缓存旧的 MIME 类型
+        self.send_header('Cache-Control', 'no-store, no-cache, must-revalidate, max-age=0')
+        self.send_header('Pragma', 'no-cache')
+        super().end_headers()
 
 if __name__ == "__main__":
     # 切换到脚本所在目录
     os.chdir(os.path.dirname(os.path.abspath(__file__)))
     
+    # 确保 mimetypes 库也能识别（双重保障）
+    if sys.platform == 'win32':
+        # Windows 注册表有时会覆盖 MIME 类型，这里尝试强制添加
+        mimetypes.add_type('application/javascript', '.js')
+        mimetypes.add_type('application/javascript', '.mjs')
+        mimetypes.add_type('text/css', '.css')
+
+    print(f"Starting server at http://localhost:{PORT}")
+    print(f"Serving directory: {os.getcwd()}")
+    
+    # 支持重用端口，避免重启时报错
+    socketserver.TCPServer.allow_reuse_address = True
+    
     with socketserver.TCPServer(("", PORT), Handler) as httpd:
-        print(f"Serving at http://localhost:{PORT}")
         print("Press Ctrl+C to stop")
         try:
             httpd.serve_forever()
         except KeyboardInterrupt:
-            pass
+            print("\nServer stopped.")
+            sys.exit(0)

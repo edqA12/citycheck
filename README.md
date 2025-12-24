@@ -31,9 +31,11 @@
 
 ### 后端 (Backend)
 
-- **Python 3.8+**
+- **Python 3.10**
+- **Conda**: 环境管理工具。
 - **FastAPI**: 高性能的异步 Web 框架，用于构建 API 和 WebSocket 服务。
 - **Ultralytics YOLO**: 强大的目标检测模型框架。
+- **PyTorch (CUDA 11.8)**: 深度学习计算框架。
 - **OpenCV**: 用于图像处理和视频流捕获。
 - **Uvicorn**: ASGI 服务器。
 
@@ -49,24 +51,48 @@
 
 ### 环境准备
 
-- 操作系统：Windows / Linux / macOS
-- Python：3.8 或更高版本
-- 硬件：建议使用支持 CUDA 的 NVIDIA 显卡以获得流畅的实时检测体验（CPU 模式亦可运行，但帧率较低）。
+- **操作系统**：Windows / Linux / macOS
+- **环境管理**：Anaconda 或 Miniconda
+- **显卡驱动**：支持 CUDA 11.8 的 NVIDIA 显卡驱动
 
 ### 1. 克隆项目
 
 ```bash
 git clone <your-repo-url>
-cd "Project Test"
+cd SmartWaterPatrolSystem
 ```
 
-### 2. 后端配置
+### 2. 环境配置 (Conda)
 
-进入后端目录并安装依赖：
+本项目建议使用 Conda 进行环境管理。请按照以下步骤创建并激活环境：
+
+#### 方式一：手动创建（推荐，确保 CUDA 版本正确）
 
 ```bash
+# 1. 创建 Python 3.10 环境
+conda create -n water_patrol python=3.10
+conda activate water_patrol
+
+# 2. 安装 PyTorch (CUDA 11.8 版本)
+# 注意：必须指定 index-url 以获取支持 CUDA 11.8 的版本
+pip install torch==2.1.1 torchvision==0.16.1 --index-url https://download.pytorch.org/whl/cu118
+
+# 3. 安装其他依赖
 cd backend
 pip install -r requirements.txt
+```
+
+#### 方式二：使用 environment.yml
+
+如果使用 `environment.yml` 创建环境，请在创建后确认 PyTorch 版本是否匹配 CUDA 11.8。
+
+```bash
+conda env create -f environment.yml
+conda activate water_patrol
+
+# 如果发现 PyTorch 版本不对或不支持 CUDA，请执行以下命令重新安装 PyTorch：
+pip uninstall torch torchvision
+pip install torch==2.1.1 torchvision==0.16.1 --index-url https://download.pytorch.org/whl/cu118
 ```
 
 _确保 `backend` 目录下已放置训练好的 YOLO 模型文件 `best.pt`。_
@@ -84,9 +110,10 @@ python app.py
 
 #### 步骤二：启动前端服务
 
-打开一个新的终端窗口，进入前端目录并启动一个简单的 HTTP 服务器：
+打开一个新的终端窗口，激活相同的 Conda 环境，进入前端目录并启动服务：
 
 ```bash
+conda activate water_patrol
 cd frontend
 python run_server.py
 ```
@@ -99,7 +126,7 @@ python run_server.py
 ## 📁 目录结构概览
 
 ```
-Project Test/
+SmartWaterPatrolSystem/
 ├── backend/                # 后端核心代码
 │   ├── app.py              # FastAPI 应用入口与业务逻辑
 │   ├── best.pt             # YOLO 预训练模型权重
@@ -111,15 +138,18 @@ Project Test/
 │   ├── js/                 # JavaScript 源码
 │   │   ├── modules/        # 功能模块 (控制器、绘图逻辑等)
 │   │   └── app.js          # Vue 应用主逻辑
-│   └── server.py           # (可选) 简单的 Python 前端服务器脚本
+│   ├── run_server.py       # 前端服务器启动脚本
+│   └── server.py           # 简单的 Python 前端服务器脚本
+├── environment.yml         # Conda 环境配置文件
 └── README.md               # 项目说明文档
 ```
 
 ## ⚠️ 注意事项
 
-1.  **浏览器权限**：使用摄像头功能时，请允许浏览器访问摄像头的权限。
-2.  **流媒体延迟**：RTSP/RTMP 流的延迟取决于网络状况和流媒体服务器配置，建议在局域网环境下测试。
-3.  **性能优化**：如果检测帧率较低，可以尝试在后端调整图像处理的分辨率或更换更轻量级的 YOLO 模型版本。
+1.  **CUDA 版本**：请确保本地安装了 CUDA Toolkit 11.8 或兼容的驱动版本，否则模型将运行在 CPU 模式下，速度会受到影响。
+2.  **浏览器权限**：使用摄像头功能时，请允许浏览器访问摄像头的权限。
+3.  **流媒体延迟**：RTSP/RTMP 流的延迟取决于网络状况和流媒体服务器配置，建议在局域网环境下测试。
+4.  **性能优化**：如果检测帧率较低，可以尝试在后端调整图像处理的分辨率或更换更轻量级的 YOLO 模型版本。
 
 ---
 
