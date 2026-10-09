@@ -30,3 +30,4 @@ if __name__ == '__main__':
     print(f"当前工作目录: {os.getcwd()}")
     print(f"后端API地址: {BACKEND_URL}")
     app.run(host='0.0.0.0', port=8080, debug=True)
+    
