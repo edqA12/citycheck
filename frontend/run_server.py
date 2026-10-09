@@ -1,5 +1,4 @@
 import http.server
-import socketserver
 import mimetypes
 import os
 import sys
@@ -51,10 +50,8 @@ if __name__ == "__main__":
     print(f"Starting server at http://localhost:{PORT}")
     print(f"Serving directory: {os.getcwd()}")
     
-    # 支持重用端口，避免重启时报错
-    socketserver.TCPServer.allow_reuse_address = True
-    
-    with socketserver.TCPServer(("", PORT), Handler) as httpd:
+    # 并行处理资源请求，避免一个等待中的连接阻塞整个页面
+    with http.server.ThreadingHTTPServer(("", PORT), Handler) as httpd:
         print("Press Ctrl+C to stop")
         try:
             httpd.serve_forever()

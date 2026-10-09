@@ -146,7 +146,7 @@ export function createDetectionDrawer(canvasElement, videoElement) {
             ctx.shadowOffsetY = 2;
             
             // 绘制半透明背景，使文字更容易阅读
-            const labelBgHeight = 40; // 增加标签高度
+            const labelBgHeight = 52; // 留出类别名称、置信度和底部内边距
             const labelWidth = Math.min(Math.max(boxWidth, 180), 300); // 确保标签宽度适中
             
             // 绘制标签背景 - 顶部
@@ -173,11 +173,11 @@ export function createDetectionDrawer(canvasElement, videoElement) {
             const confidenceText = `${(detection.confidence * 100).toFixed(1)}%`;
             
             // 绘制类别名称
-            ctx.fillText(className, x1 + 10, y1 + 25);
+            ctx.fillText(className, x1 + 10, y1 + 25, labelWidth - 20);
             
             // 绘制置信度 - 使用较小字体
             ctx.font = '14px Arial';
-            ctx.fillText(confidenceText, x1 + 10, y1 + 45);
+            ctx.fillText(confidenceText, x1 + 10, y1 + 45, labelWidth - 20);
             
             // 如果边界框足够大，在中心添加类别图标
             if (boxWidth > 100 && boxHeight > 100) {
@@ -205,7 +205,7 @@ export function createDetectionDrawer(canvasElement, videoElement) {
                     
                     // 绘制图标
                     ctx.fillStyle = 'white';
-                    ctx.font = `${iconSize}px "Font Awesome 5 Free"`;
+                    ctx.font = `900 ${iconSize}px "Font Awesome 6 Free"`;
                     ctx.textAlign = 'center';
                     ctx.textBaseline = 'middle';
                     ctx.fillText(icon, centerX, centerY);

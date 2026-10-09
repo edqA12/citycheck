@@ -5,6 +5,8 @@ import { ElMessage } from 'element-plus'
 export function createDetectionStats() {
     const detectionCount = ref(0);
     const detectionClasses = ref({});
+    // 保留后端类别编号，用于分组；类别名称仍供图表和列表显示
+    const detectionClassIds = ref({});
     const hasShownWarning = ref(false);
     const hazards = ref({});
     // 添加已显示提示的物体类型集合
@@ -22,6 +24,7 @@ export function createDetectionStats() {
     const resetDetectionStats = () => {
         detectionCount.value = 0;
         detectionClasses.value = {};
+        detectionClassIds.value = {};
         hasShownWarning.value = false;
         hazards.value = {};
         // 重置已显示提示的集合
@@ -45,6 +48,9 @@ export function createDetectionStats() {
                 detectionClasses.value[className] = 0;
             }
             detectionClasses.value[className]++;
+            detectionClassIds.value[className] = Number.isInteger(detection.class)
+                ? detection.class
+                : null;
 
             // 根据类别判断隐患类型
             let hazardType = '';
@@ -163,27 +169,17 @@ export function createDetectionStats() {
         return { className: maxClass, count: maxCount };
     };
 
-    // 获取特定类别范围的检测结果
+    // 按后端类别编号获取指定分组的检测结果
     const getCategoryDetections = (startClass, endClass) => {
         const result = {};
-        
+
         for (const [className, count] of Object.entries(detectionClasses.value)) {
-            // 提取类别ID
-            const classMatch = className.match(/^.*?(\d+)$/);
-            if (classMatch) {
-                const classId = parseInt(classMatch[1]);
-                if (classId >= startClass && classId <= endClass) {
-                    result[className] = count;
-                }
-            } else if (className.includes('类别')) {
-                // 处理"类别 X"格式
-                const classId = parseInt(className.split(' ')[1]);
-                if (!isNaN(classId) && classId >= startClass && classId <= endClass) {
-                    result[className] = count;
-                }
+            const classId = detectionClassIds.value[className];
+            if (Number.isInteger(classId) && classId >= startClass && classId <= endClass) {
+                result[className] = count;
             }
         }
-        
+
         return result;
     };
 
@@ -192,34 +188,17 @@ export function createDetectionStats() {
         return Object.keys(getCategoryDetections(startClass, endClass)).length > 0;
     };
 
-    // 获取其他类别的检测结果（不在已知类别范围内的）
+    // 未知编号或缺少有效编号的结果显示在其他物体中
     const getOtherDetections = () => {
         const result = {};
-        const knownClassIds = Array.from({ length: 17 }, (_, i) => i); // 0-16
-        
+
         for (const [className, count] of Object.entries(detectionClasses.value)) {
-            let isKnown = false;
-            
-            // 提取类别ID
-            const classMatch = className.match(/^.*?(\d+)$/);
-            if (classMatch) {
-                const classId = parseInt(classMatch[1]);
-                if (knownClassIds.includes(classId)) {
-                    isKnown = true;
-                }
-            } else if (className.includes('类别')) {
-                // 处理"类别 X"格式
-                const classId = parseInt(className.split(' ')[1]);
-                if (!isNaN(classId) && knownClassIds.includes(classId)) {
-                    isKnown = true;
-                }
-            }
-            
-            if (!isKnown) {
+            const classId = detectionClassIds.value[className];
+            if (!Number.isInteger(classId) || classId < 0 || classId > 16) {
                 result[className] = count;
             }
         }
-        
+
         return result;
     };
 

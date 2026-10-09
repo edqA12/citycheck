@@ -1,4 +1,4 @@
-import { createApp, ref, onMounted, onUnmounted, computed } from "vue";
+import { createApp, ref, onMounted, onBeforeUnmount, computed, watch } from "vue";
 import ElementPlus from "element-plus";
 import { createVideoController } from "./modules/videoController.js";
 import { createDetectionStats } from "./modules/detectionStats.js";
@@ -21,6 +21,21 @@ const app = createApp({
     const isStreamMode = ref(false); // 添加流媒体模式标志
     const streamUrl = ref(""); // 添加流媒体地址
     const warningMessage = ref(""); // 警告信息
+    const showWarning = computed(() => Boolean(warningMessage.value));
+    const dismissWarning = () => {
+      warningMessage.value = "";
+    };
+
+    let captureTimer = null;
+    let captureGeneration = 0;
+    let videoObjectUrl = null;
+    const stopFrameCapture = () => {
+      captureGeneration++;
+      if (captureTimer !== null) {
+        clearTimeout(captureTimer);
+        captureTimer = null;
+      }
+    };
 
     // 初始化各个模块
     const videoController = createVideoController(
@@ -38,6 +53,7 @@ const app = createApp({
       },
       (error) => {
         console.error("检测错误:", error);
+        warningMessage.value = error?.message || "检测连接失败，请检查后端服务是否运行";
       }
     );
 
@@ -46,6 +62,21 @@ const app = createApp({
       videoElement,
       canvasElement
     );
+    const restoreStreamWaiting = (message) => {
+      streamController.stopStreamDetection();
+      isStreamMode.value = false;
+      isVideoActive.value = false;
+      websocketController.detectionStatus.value = message;
+    };
+    watch(streamController.streamErrorMessage, (message) => {
+      if (message) {
+        warningMessage.value = message;
+        if (isStreamMode.value) restoreStreamWaiting(message);
+      }
+    });
+    watch(streamController.isStreamDetecting, (active) => {
+      if (isStreamMode.value) isVideoActive.value = active;
+    });
 
     // 添加流媒体检测回调处理
     streamController.setDetectionCallback((data) => {
@@ -57,11 +88,10 @@ const app = createApp({
 
     // 开启摄像头
     const startCamera = async () => {
+      dismissWarning();
       try {
-        // 如果流媒体模式活跃，先停止
-        if (isStreamMode.value) {
-          stopStreamDetection();
-        }
+        // 切换输入前释放旧视频、摄像头和流媒体连接
+        stopCamera();
 
         console.log("正在尝试访问摄像头...");
 
@@ -71,7 +101,7 @@ const app = createApp({
         // 检查videoElement是否已正确引用
         if (!videoElement.value) {
           console.error("videoElement未找到");
-          alert("视频元素未初始化，请刷新页面重试");
+          warningMessage.value = "视频元素未初始化，请刷新页面重试";
           return;
         }
 
@@ -114,64 +144,54 @@ const app = createApp({
       } catch (err) {
         console.error("摄像头访问失败:", err);
         websocketController.detectionStatus.value = "摄像头访问失败";
-        alert("无法访问摄像头，请确保已授予权限。错误: " + err.message);
+        warningMessage.value = "无法访问摄像头，请确保已授予权限。错误: " + err.message;
       }
+    };
+
+    // 每个输入只保留一个取帧任务，停止后丢弃尚未完成的编码结果
+    const startFrameCapture = (cameraMode) => {
+      stopFrameCapture();
+      const generation = captureGeneration;
+      const video = videoElement.value;
+      const captureCanvas = document.createElement("canvas");
+      const captureCtx = captureCanvas.getContext("2d");
+      captureCanvas.width = video.videoWidth;
+      captureCanvas.height = video.videoHeight;
+      const isCurrentCapture = () =>
+        generation === captureGeneration &&
+        websocketController.isDetecting.value &&
+        isVideoActive.value &&
+        !isStreamMode.value &&
+        isCameraMode.value === cameraMode;
+      const captureAndSendFrame = () => {
+        captureTimer = null;
+        if (!isCurrentCapture() || (!cameraMode && (video.paused || video.ended))) {
+          return;
+        }
+        if (websocketController.ws.value?.readyState === WebSocket.OPEN) {
+          captureCtx.drawImage(video, 0, 0, captureCanvas.width, captureCanvas.height);
+          captureCanvas.toBlob((blob) => {
+            if (blob && isCurrentCapture()) websocketController.sendData(blob);
+          }, "image/jpeg", 0.8);
+        }
+        captureTimer = setTimeout(captureAndSendFrame, 100);
+      };
+      captureAndSendFrame();
     };
 
     // 摄像头检测函数
     const startCameraDetection = () => {
-      if (!websocketController.isDetecting.value) {
-        websocketController.startDetection();
-
-        // 创建一个canvas用于捕获视频帧
-        const captureCanvas = document.createElement("canvas");
-        const captureCtx = captureCanvas.getContext("2d");
-        const video = videoElement.value;
-
-        // 设置捕获canvas的尺寸
-        captureCanvas.width = video.videoWidth;
-        captureCanvas.height = video.videoHeight;
-
-        // 定义捕获和发送帧的函数
-        const captureAndSendFrame = () => {
-          if (!websocketController.isDetecting.value || !isCameraMode.value) {
-            return; // 如果检测已停止或不再是摄像头模式，则退出
-          }
-
-          // 捕获当前视频帧
-          captureCtx.drawImage(
-            video,
-            0,
-            0,
-            captureCanvas.width,
-            captureCanvas.height
-          );
-
-          // 将帧转换为Blob并发送到WebSocket
-          captureCanvas.toBlob(
-            (blob) => {
-              if (blob) {
-                websocketController.sendData(blob);
-              }
-            },
-            "image/jpeg",
-            0.8
-          );
-
-          // 每隔一段时间捕获一帧
-          setTimeout(captureAndSendFrame, 100); // 约每秒10帧
-        };
-
-        // 开始捕获和发送帧
-        captureAndSendFrame();
-      }
+      websocketController.startDetection();
+      startFrameCapture(true);
     };
 
     // 停止摄像头
     const stopCamera = () => {
       console.log("停止摄像头和检测...");
 
-      // 先停止WebSocket检测
+      // 在清除模式标志前关闭两种连接并取消取帧
+      stopStreamDetection();
+      stopFrameCapture();
       websocketController.stopDetection();
 
       // 停止媒体流
@@ -192,11 +212,19 @@ const app = createApp({
       if (videoElement.value) {
         console.log("清除视频源...");
         try {
+          videoElement.value.onloadedmetadata = null;
+          videoElement.value.pause();
           videoElement.value.srcObject = null;
-          videoElement.value.src = "";
+          videoElement.value.removeAttribute("src");
+          videoElement.value.load();
         } catch (e) {
           console.error("清除视频源时出错:", e);
         }
+      }
+
+      if (videoObjectUrl) {
+        URL.revokeObjectURL(videoObjectUrl);
+        videoObjectUrl = null;
       }
 
       // 清除画布
@@ -231,10 +259,10 @@ const app = createApp({
     const handleFileUpload = async (event) => {
       const file = event.target.files[0];
       if (!file) return;
+      dismissWarning();
 
       // 停止之前的摄像头和流媒体检测
       stopCamera();
-      stopStreamDetection();
 
       // 重置检测统计
       detectionStats.resetDetectionStats();
@@ -248,7 +276,9 @@ const app = createApp({
 
       // 创建视频元素
       const video = videoElement.value;
-      video.src = URL.createObjectURL(file);
+      videoObjectUrl = URL.createObjectURL(file);
+      video.src = videoObjectUrl;
+      event.target.value = "";
       video.controls = false; // 使用自定义控制
 
       // 当视频元数据加载完成后
@@ -285,115 +315,76 @@ const app = createApp({
           });
       };
 
-      // 添加视频事件监听器
-      video.addEventListener("timeupdate", videoController.updateVideoProgress);
-      video.addEventListener("play", () => {
-        videoController.isPlaying.value = true;
-      });
-      video.addEventListener("pause", () => {
-        videoController.isPlaying.value = false;
-      });
-      video.addEventListener("volumechange", () => {
-        videoController.volume.value = video.volume;
-        videoController.isMuted.value = video.muted;
-      });
     };
 
-    // 视频文件检测函数
+    // 播放和重播都会启动检测，暂停时取消取帧
     const startVideoDetection = () => {
-      if (!websocketController.isDetecting.value) {
-        websocketController.startDetection();
-
-        // 创建一个canvas用于捕获视频帧
-        const captureCanvas = document.createElement("canvas");
-        const captureCtx = captureCanvas.getContext("2d");
-        const video = videoElement.value;
-
-        // 设置捕获canvas的尺寸
-        captureCanvas.width = video.videoWidth;
-        captureCanvas.height = video.videoHeight;
-
-        // 定义捕获和发送帧的函数
-        const captureAndSendFrame = () => {
-          if (!websocketController.isDetecting.value || video.ended) {
-            return; // 如果检测已停止或视频已结束，则退出
-          }
-
-          // 只在视频播放时捕获帧
-          if (!video.paused) {
-            // 捕获当前视频帧
-            captureCtx.drawImage(
-              video,
-              0,
-              0,
-              captureCanvas.width,
-              captureCanvas.height
-            );
-
-            // 将帧转换为Blob并发送到WebSocket
-            captureCanvas.toBlob(
-              (blob) => {
-                websocketController.sendData(blob);
-              },
-              "image/jpeg",
-              0.8
-            );
-          }
-
-          // 每隔一段时间捕获一帧
-          setTimeout(captureAndSendFrame, 100); // 约每秒10帧
-        };
-
-        // 开始捕获和发送帧
-        video.addEventListener("play", () => {
-          captureAndSendFrame();
-        });
-
-        // 如果视频已经在播放，立即开始捕获
-        if (!video.paused) {
-          captureAndSendFrame();
-        }
-
-        // 视频结束时停止检测
-        video.addEventListener("ended", () => {
-          websocketController.detectionStatus.value = "视频播放完毕";
-          websocketController.isDetecting.value = false;
-        });
+      if (!isVideoActive.value || isCameraMode.value || isStreamMode.value) return;
+      websocketController.startDetection();
+      if (!videoElement.value.paused && !videoElement.value.ended) {
+        startFrameCapture(false);
       }
+    };
+    const handleVideoPlay = () => {
+      videoController.isPlaying.value = true;
+      startVideoDetection();
+    };
+    const handleVideoPause = () => {
+      videoController.isPlaying.value = false;
+      if (!isCameraMode.value) stopFrameCapture();
+    };
+    const handleVideoEnded = () => {
+      if (isCameraMode.value || isStreamMode.value) return;
+      stopFrameCapture();
+      websocketController.stopDetection();
+      videoController.isPlaying.value = false;
+      websocketController.detectionStatus.value = "视频播放完毕";
+    };
+    const handleVolumeChange = () => {
+      videoController.volume.value = videoElement.value.volume;
+      videoController.isMuted.value = videoElement.value.muted;
     };
 
     // 开始流媒体检测
     const startStreamDetection = async () => {
-      console.log("开始流媒体检测:", streamUrl.value);
+      const targetUrl = streamUrl.value.trim();
+      if (!targetUrl) {
+        warningMessage.value = "请输入流媒体地址";
+        return;
+      }
+      dismissWarning();
+      console.log("开始流媒体检测:", targetUrl);
 
-      // 停止其他检测模式
+      // 地址有效后再切换检测模式
       stopCamera();
-
-      // 重置检测统计
       detectionStats.resetDetectionStats();
-
-      // 设置为流媒体模式
-      isCameraMode.value = false;
+      streamController.streamErrorMessage.value = "";
       isStreamMode.value = true;
-      isVideoActive.value = true;
+      isVideoActive.value = false;
 
-      // 启动流媒体检测
-      const result = await streamController.startStreamDetection(
-        streamUrl.value
-      );
+      const result = await streamController.startStreamDetection(targetUrl);
+      // 等待期间切换模式或发生错误时，关闭迟到的连接
+      if (!isStreamMode.value) {
+        streamController.stopStreamDetection();
+        return;
+      }
       if (result) {
         websocketController.detectionStatus.value =
           streamController.streamStatus.value;
+        isVideoActive.value = streamController.isStreamDetecting.value;
       } else {
-        websocketController.detectionStatus.value =
-          streamController.streamErrorMessage.value;
+        const message = streamController.streamErrorMessage.value ||
+          "流媒体连接失败，请检查地址和后端服务";
+        warningMessage.value = message;
+        restoreStreamWaiting(message);
       }
     };
 
     // 停止流媒体检测
     const stopStreamDetection = () => {
-      if (isStreamMode.value) {
-        streamController.stopStreamDetection();
+      const wasStreamMode = isStreamMode.value;
+      streamController.stopStreamDetection();
+      if (wasStreamMode) {
         isStreamMode.value = false;
         isVideoActive.value = false;
         websocketController.detectionStatus.value = "流媒体检测已停止";
@@ -440,52 +431,61 @@ const app = createApp({
     const detectionStatus = computed(() => {
       if (isStreamMode.value) {
         return streamController.streamStatus.value;
+      } else if (
+        isVideoActive.value &&
+        !isCameraMode.value &&
+        !videoController.isPlaying.value &&
+        videoElement.value?.ended
+      ) {
+        return "视频播放完毕";
       } else {
         return websocketController.detectionStatus.value;
       }
     });
 
+    const resizeCanvas = () => {
+      if (videoElement.value && canvasElement.value) {
+        canvasElement.value.width = videoElement.value.videoWidth;
+        canvasElement.value.height = videoElement.value.videoHeight;
+      }
+    };
+
+    const handleKeydown = (event) => {
+      if (event.code === "Space" && isVideoActive.value && !isCameraMode.value) {
+        videoController.togglePlay();
+        event.preventDefault();
+      }
+    };
+
     onMounted(() => {
       chartController.initPieChart();
-
-      // 初始化时设置 canvas 尺寸
-      const resizeCanvas = () => {
-        if (videoElement.value && canvasElement.value) {
-          canvasElement.value.width = videoElement.value.videoWidth;
-          canvasElement.value.height = videoElement.value.videoHeight;
-        }
-      };
-
-      // 确保DOM元素已经准备好
       if (videoElement.value) {
         videoElement.value.addEventListener("loadedmetadata", resizeCanvas);
+        videoElement.value.addEventListener("timeupdate", videoController.updateVideoProgress);
+        videoElement.value.addEventListener("play", handleVideoPlay);
+        videoElement.value.addEventListener("pause", handleVideoPause);
+        videoElement.value.addEventListener("ended", handleVideoEnded);
+        videoElement.value.addEventListener("volumechange", handleVolumeChange);
       }
       window.addEventListener("resize", resizeCanvas);
-
-      // 添加键盘快捷键
-      window.addEventListener("keydown", (e) => {
-        if (e.code === "Space" && isVideoActive.value && !isCameraMode.value) {
-          videoController.togglePlay();
-          e.preventDefault();
-        }
-      });
+      window.addEventListener("keydown", handleKeydown);
     });
 
-    onUnmounted(() => {
-      stopCamera();
-      websocketController.stopDetection();
+    onBeforeUnmount(() => {
       window.removeEventListener("resize", resizeCanvas);
-
-      // 移除视频事件监听器
+      window.removeEventListener("keydown", handleKeydown);
       if (videoElement.value) {
+        videoElement.value.removeEventListener("loadedmetadata", resizeCanvas);
+        videoElement.value.removeEventListener("play", handleVideoPlay);
+        videoElement.value.removeEventListener("pause", handleVideoPause);
+        videoElement.value.removeEventListener("ended", handleVideoEnded);
+        videoElement.value.removeEventListener("volumechange", handleVolumeChange);
         videoElement.value.removeEventListener(
           "timeupdate",
           videoController.updateVideoProgress
         );
       }
-
-      // 移除键盘快捷键
-      window.removeEventListener("keydown", null);
+      stopCamera();
     });
 
     return {
@@ -498,6 +498,9 @@ const app = createApp({
       isCameraMode,
       isStreamMode,
       streamUrl,
+      warningMessage,
+      showWarning,
+      dismissWarning,
       ...videoController,
       ...detectionStats,
       detectionStatus,
