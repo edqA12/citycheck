@@ -121,7 +121,7 @@ python run_server.py
 ### 4. 访问系统
 
 打开浏览器（推荐 Chrome 或 Edge）访问：
-[http://localhost:8080](http://localhost:8080)
+[http://localhost:8088](http://localhost:8088)
 
 ## 🐳 DeepSeek R1 模型部署 (Docker & Ollama)
 

@@ -1,6 +1,7 @@
 import { ref, watch } from "vue";
 
 export function createStreamController(videoElement, canvasElement) {
+  const apiHost = window.location.hostname || "localhost";
   const ws = ref(null);
   const isStreamDetecting = ref(false);
   const streamUrl = ref("");
@@ -20,7 +21,7 @@ export function createStreamController(videoElement, canvasElement) {
     try {
       // 发送测试请求 - 直连后端
       const response = await fetch(
-        "http://localhost:8001/test/stream-connection",
+        `${window.location.protocol === "https:" ? "https:" : "http:"}//${apiHost}:8001/test/stream-connection`,
         {
           method: "POST",
           headers: {
@@ -106,7 +107,7 @@ export function createStreamController(videoElement, canvasElement) {
       console.log("正在连接流媒体WebSocket...");
       // 根据当前环境判断WebSocket地址
       const wsProtocol = window.location.protocol === "https:" ? "wss:" : "ws:";
-      const wsHost = "localhost:8001"; // 直连后端WebSocket服务器
+      const wsHost = `${apiHost}:8001`; // 直连后端WebSocket服务器
       ws.value = new WebSocket(`${wsProtocol}//${wsHost}/ws/stream`);
 
       ws.value.onopen = () => {

@@ -47,7 +47,9 @@ export function createWebSocketController(onMessage, onError) {
             
             // 创建新的WebSocket连接
             console.log('正在连接WebSocket...');
-            ws.value = new WebSocket('ws://localhost:8001/ws/detect');
+            const wsProtocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
+            const wsHost = window.location.hostname || 'localhost';
+            ws.value = new WebSocket(`${wsProtocol}//${wsHost}:8001/ws/detect`);
             
             ws.value.onopen = () => {
                 console.log('WebSocket 连接已建立');
